@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow, session } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
 import { registerProfileIpc, ensureDeviceId } from './profileStore.js'
@@ -58,6 +59,13 @@ app.whenReady().then(() => {
   // Create the deviceId on first launch if it doesn't exist yet.
   ensureDeviceId()
   createWindow()
+
+  // Check for updates via GitHub Releases (see electron-builder.yml "publish").
+  // Only meaningful for a packaged, signed build with a real publish target;
+  // no-ops harmlessly in dev (app.isPackaged is false).
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {})
+  }
 
   app.on('activate', () => {
     // On macOS, re-create a window when the dock icon is clicked and none are open.

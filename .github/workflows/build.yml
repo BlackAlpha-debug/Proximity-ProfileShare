@@ -1,0 +1,78 @@
+name: Build
+
+# Builds all three packages (Windows NSIS + Store, macOS DMG, Linux
+# AppImage) and uploads them to a GitHub Release whenever a "vX.Y.Z" tag
+# is pushed. Each target is built on its native OS because dmg/appx
+# packaging tools aren't cross-platform.
+#
+# Code signing / notarization only happens if the corresponding secrets
+# are configured on this repo (Settings > Secrets and variables >
+# Actions). Without them the build still succeeds, just unsigned — see
+# README.md "Code signing" before distributing publicly.
+#   CSC_LINK / CSC_KEY_PASSWORD                       — Windows Authenticode
+#   APPLE_CSC_LINK / APPLE_CSC_KEY_PASSWORD            — macOS Developer ID (.p12)
+#   APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID — macOS notarization
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: --win nsis appx
+          - os: macos-latest
+            args: --mac dmg
+          - os: ubuntu-latest
+            args: --linux AppImage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and publish
+        run: npm run package -- ${{ matrix.args }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # electron-builder always reads CSC_LINK / CSC_KEY_PASSWORD for
+          # whichever single platform this job is building, so pick the
+          # matching secret pair per-OS here rather than a fixed name
+          # (Windows needs a .pfx, macOS needs a .p12 — different certs).
+          CSC_LINK: ${{ matrix.os == 'windows-latest' && secrets.CSC_LINK || matrix.os == 'macos-latest' && secrets.APPLE_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.os == 'windows-latest' && secrets.CSC_KEY_PASSWORD || matrix.os == 'macos-latest' && secrets.APPLE_CSC_KEY_PASSWORD || '' }}
+          # macOS notarization (optional, see README.md). electron-builder
+          # calls `notarytool` automatically when these are present.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-artifacts
+          path: |
+            release/*.exe
+            release/*.appx
+            release/*.msix
+            release/*.dmg
+            release/*.AppImage
+            release/*.blockmap
+            release/*.yml
+          if-no-files-found: ignore

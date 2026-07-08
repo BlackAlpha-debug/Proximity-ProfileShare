@@ -1,10 +1,15 @@
 {
   "name": "proximity-share",
+  "productName": "Proximity Profile Share",
   "version": "0.1.0",
   "description": "Swap a digital profile with someone nearby via an animated bubble handshake.",
   "main": "./out/main/index.js",
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BlackAlpha-debug/Proximity-ProfileShare.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
@@ -15,6 +20,7 @@
   "dependencies": {
     "bonjour-service": "^1.4.2",
     "electron-store": "^10.1.0",
+    "electron-updater": "^6.3.9",
     "jsqr": "^1.4.0",
     "qrcode": "^1.5.4",
     "selfsigned": "^5.5.0"
@@ -27,26 +33,6 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "vite": "^5.4.11"
-  },
-  "build": {
-    "appId": "com.proximityshare.app",
-    "productName": "Proximity Profile Share",
-    "files": [
-      "out/**/*",
-      "package.json"
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "win": {
-      "target": "nsis"
-    },
-    "mac": {
-      "target": "dmg"
-    },
-    "linux": {
-      "target": "AppImage"
-    }
   },
   "optionalDependencies": {
     "@abandonware/bleno": "^0.6.2",

@@ -1,0 +1,170 @@
+# electron-builder configuration.
+#
+# This is a dedicated config file (rather than the "build" field in
+# package.json) specifically so it can carry comments — code signing and
+# auto-update setup need explanation, not just values. See README.md
+# "Code signing" for the full walkthrough.
+
+appId: com.proximityshare.app
+productName: Proximity Profile Share
+copyright: Copyright © 2026 Proximity Profile Share
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+
+# Single square source icon (>=1024x1024 recommended). electron-builder
+# auto-converts this into .ico (Windows), .icns (macOS) and the AppX tile
+# set (Windows Store) at build time — no need to hand-produce each format.
+icon: build/icon.png
+
+# -----------------------------------------------------------------------
+# Auto-update (electron-updater) — GitHub Releases
+# -----------------------------------------------------------------------
+# electron-updater reads this "publish" block (baked into app-update.yml
+# at build time) to know where to look for newer versions. Tagged "vX.Y.Z"
+# pushes build every target via .github/workflows/build.yml and upload the
+# installers here as a GitHub Release; src/main/index.js then calls
+# autoUpdater.checkForUpdatesAndNotify() on launch (packaged builds only).
+#
+# Requires a GH_TOKEN/GITHUB_TOKEN with `repo` scope at publish time (the
+# GitHub Actions workflow already provides this via secrets.GITHUB_TOKEN).
+publish:
+  provider: github
+  owner: BlackAlpha-debug
+  repo: Proximity-ProfileShare
+  releaseType: release
+
+# =========================================================================
+# Windows
+# =========================================================================
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: appx
+      arch: [x64]
+  icon: build/icon.png
+  # -----------------------------------------------------------------------
+  # Windows code signing (Authenticode)
+  # -----------------------------------------------------------------------
+  # Without this, Windows SmartScreen shows an "Unknown Publisher" warning
+  # (and on a fresh cert, may block the installer outright until it builds
+  # reputation) for anyone who downloads it. See README.md "Code signing"
+  # for where to buy an Authenticode certificate.
+  #
+  # To sign:
+  #   1. Get an OV or EV Authenticode code-signing certificate (README.md
+  #      has vendor links) and export it as a .pfx/.p12 file — or use a
+  #      cloud/HSM-backed signer (Azure Trusted Signing, DigiCert
+  #      KeyLocker, SSL.com eSigner) via a custom `sign` hook instead.
+  #   2. DO NOT commit the .pfx to the repo. Prefer environment variables
+  #      over the fields below:
+  #        CSC_LINK           = path or base64-encoded contents of the .pfx
+  #        CSC_KEY_PASSWORD   = the .pfx password
+  #      electron-builder picks these up automatically with no config
+  #      needed — leave certificateFile/certificatePassword null locally
+  #      and set the two env vars (or GitHub Actions secrets, see
+  #      .github/workflows/build.yml) instead.
+  #   3. Only fill in the two fields below directly if you specifically
+  #      need a checked-in path (e.g. a certs/ dir outside version control
+  #      on a private build machine).
+  certificateFile: null # e.g. "build/certs/windows-authenticode.pfx"
+  certificatePassword: null # prefer the CSC_KEY_PASSWORD env var instead
+  signtoolOptions:
+    signingHashAlgorithms: [sha256]
+
+# -----------------------------------------------------------------------
+# Microsoft Store (.appx) packaging identity
+# -----------------------------------------------------------------------
+# identityName / publisher / publisherDisplayName are assigned by the
+# Microsoft Partner Center when you reserve the app name for the Store
+# (Partner Center > App identity). The values below are placeholders that
+# build fine locally for sideloading/testing but WILL be rejected on real
+# Store submission — replace them with your Partner Center values first.
+appx:
+  identityName: ProximityProfileShare.Placeholder
+  publisher: CN=00000000-0000-0000-0000-000000000000
+  publisherDisplayName: Proximity Profile Share
+  applicationId: ProximityProfileShare
+  backgroundColor: '#4F46E5'
+  languages:
+    - en-US
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# =========================================================================
+# macOS
+# =========================================================================
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: build/icon.png
+  category: public.app-category.social-networking
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSCameraUsageDescription: Proximity Profile Share uses the camera to scan a profile QR code.
+    NSLocalNetworkUsageDescription: Proximity Profile Share discovers nearby devices on your local network to exchange profiles.
+    NSBonjourServices:
+      - _proximityshare._tcp
+  # -----------------------------------------------------------------------
+  # macOS code signing (Developer ID) + notarization
+  # -----------------------------------------------------------------------
+  # Without this, Gatekeeper refuses to open the app at all on a fresh
+  # download ("app is damaged and can't be opened" / "unidentified
+  # developer") — this isn't just a warning like SmartScreen, it's a hard
+  # block. See README.md "Code signing" for how to enroll.
+  #
+  # To sign:
+  #   1. Enroll in the Apple Developer Program and create a "Developer ID
+  #      Application" certificate (Xcode > Settings > Accounts, or
+  #      developer.apple.com > Certificates).
+  #   2. Export it to your keychain, or for CI set CSC_LINK (base64 .p12)
+  #      and CSC_KEY_PASSWORD env vars — same mechanism as Windows above.
+  #   3. Leave `identity` unset (or null, as below) to build unsigned for
+  #      local testing. Once a cert exists, either remove this line to let
+  #      electron-builder auto-pick the only "Developer ID Application"
+  #      cert in the keychain, or set it explicitly:
+  #        identity: "Developer ID Application: Your Name (TEAMID1234)"
+  identity: null
+  # -----------------------------------------------------------------------
+  # Notarization: electron-builder calls Apple's `notarytool` automatically
+  # after signing when these three env vars are present (no extra config
+  # field needed) — see .github/workflows/build.yml:
+  #   APPLE_ID                     = your Apple ID email
+  #   APPLE_APP_SPECIFIC_PASSWORD  = app-specific password (appleid.apple.com)
+  #   APPLE_TEAM_ID                = Developer Team ID (developer.apple.com)
+  # Notarization is skipped (not failed) when they're absent, so this is
+  # safe to leave as-is until credentials are ready.
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# =========================================================================
+# Linux
+# =========================================================================
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  icon: build/icon.png
+  category: Network
+  maintainer: Proximity Profile Share
