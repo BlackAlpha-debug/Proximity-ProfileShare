@@ -270,7 +270,7 @@ export default function App() {
       return (
         <main className="app app--home">
           <AppNav current="contacts" contactCount={contacts.length} onNavigate={setView} />
-          <ContactsView contacts={contacts} onDelete={deleteContact} />
+          <ContactsView contacts={contacts} onDelete={deleteContact} onNavigate={setView} />
         </main>
       )
     }

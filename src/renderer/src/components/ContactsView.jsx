@@ -46,7 +46,56 @@ function actionsFor(contact) {
   return actions
 }
 
-export default function ContactsView({ contacts, onDelete }) {
+function EmptyState({ onNavigate }) {
+  return (
+    <div className="cx-empty">
+      <div className="cx-empty__badge">
+        <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
+          <path
+            d="M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-9 2v-2H5v2H3v2h2v2h2v-2h2v-2H7zm9 0c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+            fill="currentColor"
+          />
+        </svg>
+        <span className="cx-empty__badge-dot">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          </svg>
+        </span>
+      </div>
+
+      <h2 className="cx-empty__title">Connect Instantly</h2>
+      <p className="cx-empty__text">
+        No contacts yet. Share profiles via QR or a nearby device to add them here.
+      </p>
+
+      <div className="cx-empty__cards">
+        <button type="button" className="cx-action" onClick={() => onNavigate?.('share')}>
+          <svg className="cx-action__icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path
+              d="M3 3h7v7H3V3zm2 2v3h3V5H5zM14 3h7v7h-7V3zm2 2v3h3V5h-3zM3 14h7v7H3v-7zm2 2v3h3v-3H5zM14 14h3v3h-3v-3zm4 0h3v3h-3v-3zm0 4h3v3h-3v-3zm-4 0h3v3h-3v-3z"
+              fill="currentColor"
+            />
+          </svg>
+          <span className="cx-action__title">Show QR Code</span>
+          <span className="cx-action__desc">Let others scan your profile directly from your screen.</span>
+        </button>
+
+        <button type="button" className="cx-action" onClick={() => onNavigate?.('saved')}>
+          <svg className="cx-action__icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path
+              d="M12 12a2 2 0 1 0 2 2 2 2 0 0 0-2-2zm5.66-3.66a1 1 0 0 0-1.42 1.42 5 5 0 0 1 0 6.48 1 1 0 1 0 1.42 1.42 7 7 0 0 0 0-9.32zm-11.32 0a7 7 0 0 0 0 9.32 1 1 0 1 0 1.42-1.42 5 5 0 0 1 0-6.48 1 1 0 0 0-1.42-1.42zM20.49 5.5a1 1 0 1 0-1.41 1.42 9 9 0 0 1 0 12.16 1 1 0 0 0 1.41 1.42 11 11 0 0 0 0-15zm-15.56 0a1 1 0 0 0-1.42-1.42 11 11 0 0 0 0 15 1 1 0 0 0 1.42-1.42 9 9 0 0 1 0-12.16z"
+              fill="currentColor"
+            />
+          </svg>
+          <span className="cx-action__title">Find Nearby</span>
+          <span className="cx-action__desc">Scan for active Proximity devices in your immediate radius.</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default function ContactsView({ contacts, onDelete, onNavigate }) {
   const [query, setQuery] = useState('')
   const [pendingDelete, setPendingDelete] = useState(null)
 
@@ -74,9 +123,7 @@ export default function ContactsView({ contacts, onDelete }) {
       </div>
 
       {contacts.length === 0 ? (
-        <p className="contacts__empty">
-          No contacts yet. Share profiles via QR or a nearby device to add them here.
-        </p>
+        <EmptyState onNavigate={onNavigate} />
       ) : filtered.length === 0 ? (
         <p className="contacts__empty">No contacts match “{query}”.</p>
       ) : (
