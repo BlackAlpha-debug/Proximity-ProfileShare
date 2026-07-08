@@ -15,9 +15,10 @@ without UWB hardware.
 - **electron-store** — local profile / deviceId / contacts persistence (JSON in userData)
 - **qrcode** + **jsqr** — QR generation / decoding (primary, zero-network sharing path)
 - **bonjour-service** — mDNS/DNS-SD advertise + browse (bonus local-network discovery)
+- Node **tls** + **selfsigned** — encrypted local socket for the mDNS profile exchange
 
 Planned for later phases (not installed yet): `@abandonware/noble` (BLE proximity
-via RSSI), Node `tls` (encrypted local socket).
+via RSSI).
 
 ## Project layout
 
@@ -30,8 +31,10 @@ src/
     permissions.js    OS-permission IPC (settings deep links, LAN priming, flag)
     discovery.js      mDNS advertise + browse, peer list, peers-updated event
     discoveryPeers.js pure Service→peer parsing helpers (electron-free, testable)
-    handshake.js      electron wiring for the TCP handshake (owns the listen socket)
-    handshakeEngine.js protocol engine + tie-break (electron-free, testable)
+    handshake.js      electron wiring for the TLS handshake (owns the listen socket)
+    handshakeEngine.js protocol engine + tie-break + profile exchange (electron-free, testable)
+    certs.js          per-device self-signed TLS credentials (stored in electron-store)
+    profilePayload.js pure validator for received profile payloads (electron-free)
   preload/   contextBridge-only bridges between main and renderer (no Node in UI)
   renderer/  React UI
     index.html          renderer entry HTML (with CSP)
@@ -129,8 +132,9 @@ TXT keys are read case-insensitively. The bonjour advertisement is torn down on
 
 ### Handshake protocol (`handshakeEngine.js` + `handshake.js`)
 
-Tapping a nearby peer opens a TCP connection to its advertised ip:port and sends
-newline-delimited JSON: `share-request → share-accept | share-decline | share-cancel`.
+Tapping a nearby peer opens a (TLS) connection to its advertised ip:port and sends
+newline-delimited JSON: `share-request → share-accept | share-decline | share-cancel`,
+then `profile-payload` both ways once accepted (see "Encrypted profile exchange").
 The listening socket is shared with discovery (its port is what gets advertised).
 
 - **Receiver** (non-simultaneous): gets `incoming-request`; the UI shows
@@ -146,10 +150,26 @@ The listening socket is shared with discovery (its port is what gets advertised)
   one `completed` per side, no duplicate/conflicting flows.
 
 The protocol lives in the electron-free `handshakeEngine` (dependency-injects
-`ownId`/`ownName`/`emit`) so it can be tested with two engines over real sockets;
-`handshake.js` wires it to electron. Note: the exchange is **plaintext TCP** for now —
-the encrypted (TLS) profile payload exchange is a later phase; this phase only
-negotiates consent.
+`ownId`/`ownName`/`ownProfile`/`emit`/`tlsCredentials`) so it can be tested with two
+engines over real sockets; `handshake.js` wires it to electron.
+
+### Encrypted profile exchange (`certs.js` + `profilePayload.js`)
+
+The handshake socket is **TLS** (`tls.createServer`/`tls.connect`). Each device
+generates a self-signed cert once (`selfsigned`) and persists it in electron-store
+under `tlsCredentials`. **Self-signed TLS only encrypts the channel — it does not
+authenticate the peer**, which is exactly why the client uses
+`rejectUnauthorized:false`; identity is established out-of-band by the two-word
+**verification code**, not by TLS. Do not treat TLS here as identity proof.
+
+Once both sides have accepted (the `completed` moment — receiver's Accept, or the
+tie-break's implicit accept), each side sends a `profile-payload` with its own
+`myProfile` (plus its `deviceId`; the local `photoPath` is stripped). The receiver
+runs `validateProfilePayload` (requires a non-blank string `fullName`; every other
+field must be a string; over-long strings and bad shapes are rejected) and, if valid,
+emits `profile-received` — the **renderer** then persists it via `saveContact`. A
+failed/timed-out exchange emits `error`, which shows the toast *"Couldn't complete the
+share, please try again."* The exchange has a 12s timeout.
 
 ### Connection ceremony (`ConnectionCeremony` + `lib/verificationCode.js`)
 
@@ -217,9 +237,14 @@ The app is being built in phases. Current status:
   animation with a deterministic two-word verification code shown on both devices,
   used by both the QR-confirm and handshake flows; Accept/Decline after the merge,
   resolving to a checkmark on success. See "Connection ceremony" above.
+- **Phase 6 — Encrypted profile exchange (DONE):** the mDNS handshake socket is now
+  TLS (per-device self-signed cert in electron-store); after mutual acceptance each
+  side sends its `myProfile`, the receiver validates the shape and the renderer saves
+  it; failures raise a "Couldn't complete the share" toast. Self-signed TLS encrypts
+  only — identity still rests on the verification code. See "Encrypted profile
+  exchange" above.
 - Later phases (planned):
-  BLE proximity ranging (upgrade); encrypted (TLS) profile-payload exchange;
-  contacts list; code signing + auto-update.
+  BLE proximity ranging (upgrade); contacts list; code signing + auto-update.
 
 When adding a sharing method or native capability, keep all Node/OS access in the
 main process and expose the minimum surface to the renderer through the preload.

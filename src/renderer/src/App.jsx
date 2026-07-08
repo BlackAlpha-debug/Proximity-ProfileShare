@@ -50,6 +50,7 @@ export default function App() {
   const [noPeersHint, setNoPeersHint] = useState(false)
   const [handshake, setHandshake] = useState(null)
   const [ownDeviceId, setOwnDeviceId] = useState('')
+  const [toast, setToast] = useState(null)
 
   // Our own deviceId, needed to derive the shared verification code.
   useEffect(() => {
@@ -73,9 +74,27 @@ export default function App() {
   // Subscribe to handshake protocol events for the app's lifetime.
   useEffect(() => {
     return window.api.onHandshakeEvent((event) => {
+      if (event.type === 'profile-received') {
+        // A peer's card arrived over the (TLS) socket, already validated in main.
+        // Per the app's model, the renderer persists it via the contacts API.
+        window.api.saveContact(event.profile)
+        return
+      }
+      if (event.type === 'error') {
+        setToast('Couldn’t complete the share, please try again.')
+        setHandshake(null)
+        return
+      }
       setHandshake((current) => reduceHandshake(current, event))
     })
   }, [])
+
+  // Transient error toast (connection/exchange failures).
+  useEffect(() => {
+    if (!toast) return
+    const id = setTimeout(() => setToast(null), 4000)
+    return () => clearTimeout(id)
+  }, [toast])
 
   // Auto-dismiss a terminal result after a few seconds.
   useEffect(() => {
@@ -259,6 +278,11 @@ export default function App() {
         onCancel={cancelShare}
         onDismiss={() => setHandshake(null)}
       />
+      {toast && (
+        <div className="toast" role="alert">
+          {toast}
+        </div>
+      )}
     </>
   )
 }

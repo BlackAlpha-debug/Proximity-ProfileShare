@@ -1,26 +1,37 @@
-import net from 'net'
+import tls from 'tls'
+import { validateProfilePayload } from './profilePayload.js'
 
 // Electron-free handshake protocol engine so the choreography (including the
-// simultaneous-tap tie-break) can be unit-tested with two engines over real
-// sockets. handshake.js wires this to electron (store + BrowserWindow + ipc).
+// simultaneous-tap tie-break and the TLS profile exchange) can be unit-tested
+// with two engines over real sockets. handshake.js wires this to electron.
+//
+// Transport is TLS (self-signed) — see certs.js. Self-signed TLS only ENCRYPTS
+// the channel; it does not authenticate the peer. Identity is confirmed by the
+// two-word verification code, so the client connects with rejectUnauthorized:false.
 //
 // Wire protocol — newline-delimited JSON:
-//   share-request { deviceId, displayName }   initiator → receiver
-//   share-accept  { deviceId, displayName }   receiver  → initiator
-//   share-decline { deviceId, reason }        receiver  → initiator
-//   share-cancel  { deviceId }                initiator → receiver (gave up)
+//   share-request   { deviceId, displayName }   initiator → receiver
+//   share-accept    { deviceId, displayName }   receiver  → initiator
+//   share-decline   { deviceId, reason }         receiver  → initiator
+//   share-cancel    { deviceId }                 initiator → receiver (gave up)
+//   profile-payload { profile }                  both ways, after acceptance
 
 export function createHandshakeEngine({
   ownId,
   ownName,
+  ownProfile,
   emit,
+  tlsCredentials,
   receiverTimeoutMs = 20000,
-  initiatorTimeoutMs = 25000
+  initiatorTimeoutMs = 25000,
+  exchangeTimeoutMs = 12000
 }) {
   let server = null
   let serverPort = null
-  const outgoing = new Map() // peerDeviceId -> { socket, timer, peer }
-  const incoming = new Map() // peerDeviceId -> { socket, timer, name }
+  let startPromise = null
+  const outgoing = new Map() // peerId -> { socket, timer, peer }   (request pending)
+  const incoming = new Map() // peerId -> { socket, timer, name }   (awaiting user)
+  const exchanges = new Map() // peerId -> { socket, timer, name }  (swapping payloads)
 
   function send(socket, message) {
     try {
@@ -75,21 +86,77 @@ export function createHandshakeEngine({
     incoming.delete(peerId)
   }
 
+  function clearExchange(peerId) {
+    const entry = exchanges.get(peerId)
+    if (!entry) return
+    clearTimeout(entry.timer)
+    // Delete before end() so the socket 'close' handler sees no active exchange.
+    exchanges.delete(peerId)
+    try {
+      entry.socket.end()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // ---- Profile exchange (after both sides have accepted) ----
+
+  function beginExchange(peerId, socket, name) {
+    socket.__peerId = peerId
+    // Send our own card (with our deviceId; never our local photoPath).
+    const profile = { ...(ownProfile() || {}), deviceId: ownId() }
+    delete profile.photoPath
+    send(socket, { type: 'profile-payload', profile })
+
+    const timer = setTimeout(() => {
+      if (exchanges.has(peerId)) {
+        emit({ type: 'error', peer: { deviceId: peerId, name }, reason: 'timeout' })
+        clearExchange(peerId)
+      }
+    }, exchangeTimeoutMs)
+    exchanges.set(peerId, { socket, timer, name })
+
+    const onFailure = () => {
+      if (exchanges.has(peerId)) {
+        emit({ type: 'error', peer: { deviceId: peerId, name }, reason: 'connection' })
+        clearExchange(peerId)
+      }
+    }
+    socket.on('error', onFailure)
+    socket.on('close', onFailure)
+  }
+
+  function onProfilePayload(peerId, message) {
+    const entry = exchanges.get(peerId)
+    if (!entry) return
+    const clean = validateProfilePayload(message.profile)
+    if (!clean) {
+      emit({ type: 'error', peer: { deviceId: peerId, name: entry.name }, reason: 'invalid-payload' })
+      clearExchange(peerId)
+      return
+    }
+    emit({ type: 'profile-received', peer: { deviceId: peerId, name: entry.name }, profile: clean })
+    clearExchange(peerId)
+  }
+
   // ---- Server side ----
 
   function ensureServer() {
-    return new Promise((resolve) => {
-      if (server && serverPort) {
-        resolve(serverPort)
-        return
-      }
-      server = net.createServer((socket) => handleConnection(socket))
-      server.on('error', () => {})
-      server.listen(0, () => {
-        serverPort = server.address().port
-        resolve(serverPort)
+    if (server && serverPort) return Promise.resolve(serverPort)
+    if (startPromise) return startPromise
+    startPromise = (async () => {
+      const { cert, key } = await tlsCredentials()
+      await new Promise((resolve) => {
+        server = tls.createServer({ cert, key }, (socket) => handleConnection(socket))
+        server.on('error', () => {})
+        server.listen(0, () => {
+          serverPort = server.address().port
+          resolve()
+        })
       })
-    })
+      return serverPort
+    })()
+    return startPromise
   }
 
   function handleConnection(socket) {
@@ -103,6 +170,8 @@ export function createHandshakeEngine({
           clearIncoming(peerId)
           emit({ type: 'incoming-cancelled', peer: { deviceId: peerId } })
         }
+      } else if (message.type === 'profile-payload') {
+        onProfilePayload(socket.__peerId, message)
       }
     })
   }
@@ -119,16 +188,15 @@ export function createHandshakeEngine({
       if (me < peerId) {
         // We are the initiator. Ignore the peer's redundant request and keep
         // waiting for our outgoing to be accepted. We deliberately do NOT close
-        // this socket — the peer tears it down when it cancels its own outgoing,
-        // which avoids a close/emit race on their side.
+        // this socket — the peer tears it down when it cancels its own outgoing.
         return
       }
       // Peer is the initiator (smaller id). Drop our own outgoing and treat the
-      // peer's incoming request as an implicit accept.
+      // peer's incoming request as an implicit accept, then exchange payloads.
       clearOutgoing(peerId)
       send(socket, { type: 'share-accept', deviceId: me, displayName: ownName() })
       emit({ type: 'completed', peer: { deviceId: peerId, name }, role: 'accepter', tieBroken: true })
-      socket.end()
+      beginExchange(peerId, socket, name)
       return
     }
 
@@ -154,14 +222,10 @@ export function createHandshakeEngine({
     const entry = incoming.get(peerId)
     if (!entry) return { ok: false }
     clearTimeout(entry.timer)
-    send(entry.socket, { type: 'share-accept', deviceId: ownId(), displayName: ownName() })
     incoming.delete(peerId)
+    send(entry.socket, { type: 'share-accept', deviceId: ownId(), displayName: ownName() })
     emit({ type: 'completed', peer: { deviceId: peerId, name: entry.name }, role: 'accepter' })
-    try {
-      entry.socket.end()
-    } catch {
-      /* ignore */
-    }
+    beginExchange(peerId, entry.socket, entry.name)
     return { ok: true }
   }
 
@@ -191,7 +255,15 @@ export function createHandshakeEngine({
     }
     if (outgoing.has(peerId)) return { ok: true, already: true }
 
-    const socket = net.createConnection({ host: peer.ip, port: peer.port })
+    // rejectUnauthorized:false — we accept the self-signed cert (channel encryption
+    // only); the verification code, not TLS, establishes identity.
+    const socket = tls.connect(
+      { host: peer.ip, port: peer.port, rejectUnauthorized: false },
+      () => {
+        send(socket, { type: 'share-request', deviceId: me, displayName: ownName() })
+        emit({ type: 'outgoing-pending', peer })
+      }
+    )
 
     const timer = setTimeout(() => {
       send(socket, { type: 'share-cancel', deviceId: me })
@@ -201,18 +273,19 @@ export function createHandshakeEngine({
 
     outgoing.set(peerId, { socket, timer, peer })
 
-    socket.on('connect', () => {
-      send(socket, { type: 'share-request', deviceId: me, displayName: ownName() })
-      emit({ type: 'outgoing-pending', peer })
-    })
-
     attachReader(socket, (message) => {
       if (message.type === 'share-accept') {
-        clearOutgoing(peerId)
+        // Promote to the exchange phase — keep the socket open.
+        const entry = outgoing.get(peerId)
+        if (entry) clearTimeout(entry.timer)
+        outgoing.delete(peerId)
         emit({ type: 'completed', peer, role: 'initiator' })
+        beginExchange(peerId, socket, peer.name)
       } else if (message.type === 'share-decline') {
         clearOutgoing(peerId)
         emit({ type: 'declined', peer, reason: message.reason || 'declined' })
+      } else if (message.type === 'profile-payload') {
+        onProfilePayload(peerId, message)
       }
     })
 
@@ -237,6 +310,7 @@ export function createHandshakeEngine({
   function close() {
     for (const peerId of [...outgoing.keys()]) clearOutgoing(peerId)
     for (const peerId of [...incoming.keys()]) clearIncoming(peerId)
+    for (const peerId of [...exchanges.keys()]) clearExchange(peerId)
     if (server) {
       try {
         server.close()
@@ -245,6 +319,7 @@ export function createHandshakeEngine({
       }
       server = null
       serverPort = null
+      startPromise = null
     }
   }
 

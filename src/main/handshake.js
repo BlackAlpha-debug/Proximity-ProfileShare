@@ -1,6 +1,7 @@
 import { ipcMain, app, BrowserWindow } from 'electron'
 import { store } from './store.js'
 import { createHandshakeEngine } from './handshakeEngine.js'
+import { getTlsCredentials } from './certs.js'
 
 // Electron wiring for the handshake protocol. The protocol itself lives in the
 // electron-free handshakeEngine (so it can be tested with real sockets).
@@ -8,6 +9,8 @@ import { createHandshakeEngine } from './handshakeEngine.js'
 const engine = createHandshakeEngine({
   ownId: () => String(store.get('deviceId') || ''),
   ownName: () => (store.get('myProfile')?.fullName || 'Someone').trim(),
+  ownProfile: () => store.get('myProfile'),
+  tlsCredentials: () => getTlsCredentials(),
   emit: (event) => {
     const win = BrowserWindow.getAllWindows()[0]
     if (win && !win.isDestroyed()) win.webContents.send('handshake-event', event)
