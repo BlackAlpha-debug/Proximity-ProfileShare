@@ -47,5 +47,9 @@
     "linux": {
       "target": "AppImage"
     }
+  },
+  "optionalDependencies": {
+    "@abandonware/bleno": "^0.6.2",
+    "@abandonware/noble": "^1.9.2-26"
   }
 }

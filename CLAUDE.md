@@ -16,9 +16,9 @@ without UWB hardware.
 - **qrcode** + **jsqr** — QR generation / decoding (primary, zero-network sharing path)
 - **bonjour-service** — mDNS/DNS-SD advertise + browse (bonus local-network discovery)
 - Node **tls** + **selfsigned** — encrypted local socket for the mDNS profile exchange
-
-Planned for later phases (not installed yet): `@abandonware/noble` (BLE proximity
-via RSSI).
+- **@abandonware/noble** + **@abandonware/bleno** — *optional* BLE scan/advertise
+  (proximity via RSSI). Declared in `optionalDependencies`; missing/unbuildable →
+  silent fallback to mDNS + QR.
 
 ## Project layout
 
@@ -30,8 +30,11 @@ src/
     profileStore.js   IPC handlers (profile, deviceId, photo, contacts)
     contactsData.js   pure upsert/remove helpers for receivedContacts (testable)
     permissions.js    OS-permission IPC (settings deep links, LAN priming, openExternal, flag)
-    discovery.js      mDNS advertise + browse, peer list, peers-updated event
+    discovery.js      mDNS advertise + browse; feeds the shared peer registry
     discoveryPeers.js pure Service→peer parsing helpers (electron-free, testable)
+    peerRegistry.js   merges network (mDNS) + bluetooth (BLE) peers; peers-updated
+    ble.js            optional BLE scan/advertise (defensive load, RSSI filter)
+    bleData.js        pure BLE payload encode/decode + RSSI banding (testable)
     handshake.js      electron wiring for the TLS handshake (owns the listen socket)
     handshakeEngine.js protocol engine + tie-break + profile exchange (electron-free, testable)
     certs.js          per-device self-signed TLS credentials (stored in electron-store)
@@ -132,7 +135,32 @@ If no peers appear within 5s, `noPeersHint` flips true and the UI shows the subt
 "No nearby devices found on this network — try QR sharing instead" message
 (`NearbyPeers`). Parsing lives in `discoveryPeers.js` (electron-free, unit-tested);
 TXT keys are read case-insensitively. The bonjour advertisement is torn down on
-`will-quit`; the underlying TCP socket is the handshake server (below).
+`will-quit`; the underlying TCP socket is the handshake server (below). Network peers
+flow into the shared **`peerRegistry`**, which merges them with BLE peers (below) and
+emits the combined `peers-updated`.
+
+### BLE proximity (`ble.js` + `bleData.js`) — optional upgrade
+
+An optional "is this person physically next to me?" signal. `@abandonware/noble`
+(scan) and `@abandonware/bleno` (advertise) are **optional** native modules loaded
+defensively via `createRequire` in try/catch; if absent, unbuildable, or the adapter
+is off/unauthorized/unsupported, BLE **silently no-ops** and the app runs on mDNS + QR.
+
+Advertisement is minimal (BLE packets are ~31 bytes): a custom 128-bit service UUID
+plus manufacturer data carrying a 12-hex-char **deviceId prefix** and a truncated
+displayName (`bleData.buildAdvertisement`, verified ≤31 bytes). Scanning filters by
+**RSSI**: below `DEFAULT_RSSI_THRESHOLD` (-70 dBm, ~"a few meters") peers are hidden;
+above it they're banded **Very close / Nearby / In range** (`rssiBand`) — never an
+exact distance, since RSSI→distance is unreliable. Stale BLE peers (unseen >8s) are
+pruned.
+
+`peerRegistry` merges a BLE hit into a network peer when the network deviceId starts
+with the BLE prefix (→ `sources: ['network','bluetooth']`, tappable + proximity
+label). BLE-only peers (`sources: ['bluetooth']`, `connectable:false`) show as a
+proximity signal with a "Bluetooth only — share via QR" hint, since there's no network
+route to hand the TLS handshake to. `NearbyPeers` shows a Wi-Fi icon for network and a
+Bluetooth icon for BLE. `bleData.js` (encode/decode + banding) and `peerRegistry.js`
+(merge) are electron-free and unit-tested.
 
 ### Handshake protocol (`handshakeEngine.js` + `handshake.js`)
 
@@ -266,8 +294,12 @@ The app is being built in phases. Current status:
   cards (from QR scans or mDNS profile-payloads) stored under `receivedContacts`,
   deduped by deviceId; each card shows initials, name, and phone/email/GitHub/LinkedIn
   quick actions, with a search box and per-card delete confirm. See "Contacts" above.
-- Later phases (planned):
-  BLE proximity ranging (upgrade); code signing + auto-update.
+- **Phase 8 — BLE proximity (DONE, optional):** optional Bluetooth scan/advertise
+  (`@abandonware/noble`/`bleno`) surfacing physically-near peers, RSSI-banded
+  (Very close / Nearby / In range) and merged into the same nearby list with a
+  Bluetooth-vs-network icon; silently falls back to mDNS + QR when BLE is
+  unavailable. See "BLE proximity" above.
+- Later phases (planned): code signing + auto-update.
 
 When adding a sharing method or native capability, keep all Node/OS access in the
 main process and expose the minimum surface to the renderer through the preload.

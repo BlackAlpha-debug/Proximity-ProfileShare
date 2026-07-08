@@ -3,11 +3,21 @@ import { Bonjour } from 'bonjour-service'
 import { store } from './store.js'
 import { parsePeer } from './discoveryPeers.js'
 import { ensureServer } from './handshake.js'
+import { startBle, stopBle } from './ble.js'
+import {
+  setPeersEmitter,
+  setNetworkPeer,
+  removeNetworkPeer,
+  clearNetworkPeers,
+  snapshot,
+  peerCount
+} from './peerRegistry.js'
 
 // Bonus, local-network sharing path (the QR flow remains the primary method).
 // We advertise "_proximityshare._tcp" on a real, OS-assigned port and browse for
-// other instances, keeping an in-memory peer list that is pushed to the renderer.
-// The advertised port is the shared handshake TCP server (see handshake.js).
+// other instances; peers flow into the shared registry (merged with BLE, see
+// peerRegistry.js) and are pushed to the renderer. The advertised port is the
+// shared handshake TCP server (see handshake.js).
 
 const SERVICE_TYPE = 'proximityshare' // bonjour-service adds the _<type>._tcp framing
 const EMPTY_HINT_MS = 5000
@@ -18,45 +28,27 @@ let browser = null
 let servicePort = null
 let emptyTimer = null
 let hintActive = false
-const peers = new Map() // deviceId -> { deviceId, name, ip, port }
 
-function mainWindow() {
-  return BrowserWindow.getAllWindows()[0] || null
+function payload(peers) {
+  return { peers, noPeersHint: hintActive && peers.length === 0 }
 }
 
-function emitPeers() {
-  const win = mainWindow()
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('peers-updated', {
-      peers: [...peers.values()],
-      noPeersHint: hintActive && peers.size === 0
-    })
-  }
-}
+// The registry calls this whenever the merged (network + BLE) peer list changes.
+setPeersEmitter((peers) => {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (win && !win.isDestroyed()) win.webContents.send('peers-updated', payload(peers))
+})
 
 function addPeer(service, ownDeviceId) {
   const peer = parsePeer(service, ownDeviceId)
   if (!peer) return // our own advertisement, or no usable id
-  peers.set(peer.deviceId, peer)
   hintActive = false
-  emitPeers()
+  setNetworkPeer(peer)
 }
 
 function removePeer(service) {
-  // 'down' events may not carry TXT, so match on the deviceId we can derive,
-  // falling back to a scan by service name.
   const peer = parsePeer(service, null)
-  if (peer && peers.has(peer.deviceId)) {
-    peers.delete(peer.deviceId)
-  } else {
-    for (const [id, existing] of peers) {
-      if (existing.name && service.name && service.name.includes(existing.name)) {
-        peers.delete(id)
-        break
-      }
-    }
-  }
-  emitPeers()
+  if (peer) removeNetworkPeer(peer.deviceId)
 }
 
 async function startDiscovery() {
@@ -83,11 +75,15 @@ async function startDiscovery() {
   browser.on('up', (service) => addPeer(service, ownDeviceId))
   browser.on('down', (service) => removePeer(service))
 
-  // Subtle hint if the network turns up nothing shortly after we start looking.
+  // Optional BLE proximity mode — silently no-ops if BLE isn't available.
+  startBle()
+
+  // Subtle hint if nothing (network or BLE) turns up shortly after we start.
   emptyTimer = setTimeout(() => {
-    if (peers.size === 0) {
+    if (peerCount() === 0) {
       hintActive = true
-      emitPeers()
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win && !win.isDestroyed()) win.webContents.send('peers-updated', payload(snapshot()))
     }
   }, EMPTY_HINT_MS)
 
@@ -118,9 +114,10 @@ function stopDiscovery() {
     }
   }
   bonjour = null
+  stopBle()
   // The handshake server intentionally outlives discovery start/stop; it is
   // closed on app quit by handshake.js.
-  peers.clear()
+  clearNetworkPeers()
   hintActive = false
 }
 
@@ -130,10 +127,7 @@ export function registerDiscoveryIpc() {
     stopDiscovery()
     return { running: false }
   })
-  ipcMain.handle('discovery:getPeers', () => ({
-    peers: [...peers.values()],
-    noPeersHint: hintActive && peers.size === 0
-  }))
+  ipcMain.handle('discovery:getPeers', () => payload(snapshot()))
 
   // Clean up the advertisement and socket on quit.
   app.on('will-quit', stopDiscovery)
