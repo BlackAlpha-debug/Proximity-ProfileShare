@@ -28,7 +28,8 @@ src/
     index.js          window + app lifecycle
     store.js          shared electron-store instance
     profileStore.js   IPC handlers (profile, deviceId, photo, contacts)
-    permissions.js    OS-permission IPC (settings deep links, LAN priming, flag)
+    contactsData.js   pure upsert/remove helpers for receivedContacts (testable)
+    permissions.js    OS-permission IPC (settings deep links, LAN priming, openExternal, flag)
     discovery.js      mDNS advertise + browse, peer list, peers-updated event
     discoveryPeers.js pure Service→peer parsing helpers (electron-free, testable)
     handshake.js      electron wiring for the TLS handshake (owns the listen socket)
@@ -40,9 +41,10 @@ src/
     index.html          renderer entry HTML (with CSP)
     src/
       main.jsx          React root
-      App.jsx           view router: loading → form / permissions / saved / share / scan / confirm
+      App.jsx           view router: loading → form / permissions / saved / contacts / share / scan / confirm
       components/       ProfileForm, SavedProfile, ShareView, ScanView, ContactConfirm,
-                        ConnectionCeremony, PermissionsIntro, NearbyPeers, HandshakeOverlay
+                        ConnectionCeremony, PermissionsIntro, NearbyPeers, HandshakeOverlay,
+                        AppNav, ContactsView
       lib/validation.js email / URL validators
       lib/qrPayload.js  encode/decode the QR profile payload (incl. deviceId)
       lib/verificationCode.js deterministic two-word code from a deviceId pair
@@ -60,8 +62,10 @@ handlers in `src/main/profileStore.js`:
 - `saveProfile(profile)` → persists under key `myProfile`; returns the saved object.
 - `selectPhoto()` → opens a native picker; returns `{ path, dataUrl }` or `null`.
 - `readPhoto(path)` → preview data URL for a stored photo path (or `null`).
-- `getContacts()` → array of saved contacts (key `contacts`).
-- `saveContact(contact)` → appends a scanned contact (with `id` + `addedAt`).
+- `getContacts()` → array of received contacts (key `receivedContacts`).
+- `saveContact(contact)` → **upserts** by deviceId; returns `{ ok, contact, contacts }`.
+- `deleteContact(id)` → removes by id (deviceId or generated); returns the new list.
+- `openExternal(url)` → opens a `tel:`/`mailto:`/`http(s):` link in the system handler.
 - `getPermissionsShown()` / `markPermissionsShown()` → the one-time explainer flag.
 - `openSettings('camera' | 'localnetwork')` → deep-links to the OS settings page.
 - `primeLocalNetwork()` → proactively triggers the macOS local-network prompt.
@@ -171,6 +175,21 @@ emits `profile-received` — the **renderer** then persists it via `saveContact`
 failed/timed-out exchange emits `error`, which shows the toast *"Couldn't complete the
 share, please try again."* The exchange has a 12s timeout.
 
+### Contacts (`ContactsView` + `contactsData.js`)
+
+Received cards — from a validated mDNS `profile-payload` or a confirmed QR scan —
+are saved under **`receivedContacts`**, upserted by `deviceId` (re-sharing updates in
+place, never duplicates; a card with no deviceId gets a random id). `contactsData.js`
+holds the pure `upsertContact`/`removeContact`/`sanitizeContact` logic (electron-free,
+unit-tested); a one-time migration folds any old append-only `contacts` key in.
+
+`AppNav` (top nav) switches between **My Profile** and **Contacts** (with a count
+badge). `ContactsView` renders each contact as a card with initials avatar (received
+cards never carry a photo), name, and quick-action icon buttons for phone/email/GitHub/
+LinkedIn that call `openExternal`; plus a search/filter box and a per-card delete with
+an inline Yes/No confirm. App holds the contacts list and refreshes it from the
+snapshot returned by `saveContact`/`deleteContact`.
+
 ### Connection ceremony (`ConnectionCeremony` + `lib/verificationCode.js`)
 
 A single full-screen component, shared by the QR-scan confirmation (`ContactConfirm`)
@@ -243,8 +262,12 @@ The app is being built in phases. Current status:
   it; failures raise a "Couldn't complete the share" toast. Self-signed TLS encrypts
   only — identity still rests on the verification code. See "Encrypted profile
   exchange" above.
+- **Phase 7 — Contacts (DONE):** a Contacts screen (top-nav tab) listing received
+  cards (from QR scans or mDNS profile-payloads) stored under `receivedContacts`,
+  deduped by deviceId; each card shows initials, name, and phone/email/GitHub/LinkedIn
+  quick actions, with a search box and per-card delete confirm. See "Contacts" above.
 - Later phases (planned):
-  BLE proximity ranging (upgrade); contacts list; code signing + auto-update.
+  BLE proximity ranging (upgrade); code signing + auto-update.
 
 When adding a sharing method or native capability, keep all Node/OS access in the
 main process and expose the minimum surface to the renderer through the preload.

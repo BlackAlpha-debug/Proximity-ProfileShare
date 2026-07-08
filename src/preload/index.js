@@ -17,9 +17,14 @@ const api = {
   selectPhoto: () => ipcRenderer.invoke('photo:select'),
   readPhoto: (path) => ipcRenderer.invoke('photo:read', path),
 
-  // Contacts collected from scanned QR codes (saved after confirmation).
+  // Received contacts (QR scan or mDNS profile-payload), deduped by deviceId.
+  // saveContact upserts and returns { ok, contact, contacts }.
   getContacts: () => ipcRenderer.invoke('contacts:list'),
-  saveContact: (contact) => ipcRenderer.invoke('contacts:add', contact),
+  saveContact: (contact) => ipcRenderer.invoke('contacts:save', contact),
+  deleteContact: (id) => ipcRenderer.invoke('contacts:delete', id),
+
+  // Open a safe external link (tel:/mailto:/http(s):) in the system handler.
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 
   // OS permission handling.
   // getPermissionsShown/markPermissionsShown gate the one-time explainers.

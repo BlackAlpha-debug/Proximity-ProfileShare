@@ -7,6 +7,8 @@ import ContactConfirm from './components/ContactConfirm.jsx'
 import PermissionsIntro from './components/PermissionsIntro.jsx'
 import NearbyPeers from './components/NearbyPeers.jsx'
 import HandshakeOverlay from './components/HandshakeOverlay.jsx'
+import AppNav from './components/AppNav.jsx'
+import ContactsView from './components/ContactsView.jsx'
 
 // Fold a handshake-event from the main process into the overlay state.
 function reduceHandshake(current, event) {
@@ -51,11 +53,27 @@ export default function App() {
   const [handshake, setHandshake] = useState(null)
   const [ownDeviceId, setOwnDeviceId] = useState('')
   const [toast, setToast] = useState(null)
+  const [contacts, setContacts] = useState([])
 
   // Our own deviceId, needed to derive the shared verification code.
   useEffect(() => {
     window.api.getDeviceId().then(setOwnDeviceId)
   }, [])
+
+  // Load received contacts once.
+  useEffect(() => {
+    window.api.getContacts().then(setContacts)
+  }, [])
+
+  // Upsert a contact and refresh the list from the returned snapshot.
+  function persistContact(profile) {
+    window.api.saveContact(profile).then((result) => {
+      if (result?.contacts) setContacts(result.contacts)
+    })
+  }
+  async function deleteContact(id) {
+    setContacts(await window.api.deleteContact(id))
+  }
 
   // Subscribe to live peer updates once, for the app's lifetime.
   useEffect(() => {
@@ -77,7 +95,7 @@ export default function App() {
       if (event.type === 'profile-received') {
         // A peer's card arrived over the (TLS) socket, already validated in main.
         // Per the app's model, the renderer persists it via the contacts API.
-        window.api.saveContact(event.profile)
+        persistContact(event.profile)
         return
       }
       if (event.type === 'error') {
@@ -157,7 +175,7 @@ export default function App() {
   // Persist the scanned contact on Accept; navigation waits for the ceremony's
   // success hold (finishScanned) so the "Profiles shared" state is actually seen.
   function acceptScanned() {
-    if (scannedContact) window.api.saveContact(scannedContact)
+    if (scannedContact) persistContact(scannedContact)
   }
   function finishScanned() {
     setScannedContact(null)
@@ -248,8 +266,18 @@ export default function App() {
       )
     }
 
+    if (view === 'contacts') {
+      return (
+        <main className="app app--home">
+          <AppNav current="contacts" contactCount={contacts.length} onNavigate={setView} />
+          <ContactsView contacts={contacts} onDelete={deleteContact} />
+        </main>
+      )
+    }
+
     return (
       <main className="app app--home">
+        <AppNav current="saved" contactCount={contacts.length} onNavigate={setView} />
         <SavedProfile
           profile={profile}
           photoPreview={photoPreview}

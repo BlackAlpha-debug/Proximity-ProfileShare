@@ -72,4 +72,19 @@ export function registerPermissionsIpc() {
   })
 
   ipcMain.handle('permissions:primeLocalNetwork', () => primeLocalNetwork())
+
+  // Open a contact's quick-action link in the system browser/handler. Restricted
+  // to safe schemes so a malicious contact card can't trigger arbitrary handlers.
+  ipcMain.handle('shell:openExternal', (_event, url) => {
+    try {
+      const scheme = new URL(url).protocol
+      if (['http:', 'https:', 'mailto:', 'tel:'].includes(scheme)) {
+        shell.openExternal(url)
+        return true
+      }
+    } catch {
+      /* invalid URL */
+    }
+    return false
+  })
 }

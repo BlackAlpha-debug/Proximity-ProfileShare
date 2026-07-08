@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { readFile } from 'fs/promises'
 import { extname } from 'path'
 import { store } from './store.js'
+import { upsertContact, removeContact } from './contactsData.js'
 
 const MIME_BY_EXT = {
   '.png': 'image/png',
@@ -22,6 +23,18 @@ async function toDataUrl(filePath) {
   } catch {
     return null
   }
+}
+
+// One-time migration from the old append-only "contacts" key to the
+// deduped "receivedContacts" list.
+function migrateLegacyContacts() {
+  const legacy = store.get('contacts')
+  if (!Array.isArray(legacy) || legacy.length === 0) return
+  if (store.get('receivedContacts') !== undefined) return
+  let list = []
+  for (const contact of legacy) list = upsertContact(list, contact).list
+  store.set('receivedContacts', list)
+  store.delete('contacts')
 }
 
 // Generate the deviceId once, on first run, and persist it.
@@ -44,15 +57,24 @@ export function registerProfileIpc() {
     return store.get('myProfile')
   })
 
-  // Contacts collected from scans. Saved only after explicit user confirmation.
-  ipcMain.handle('contacts:list', () => store.get('contacts', []))
+  // Received contacts (from a validated profile-payload or a confirmed QR scan).
+  // Stored under "receivedContacts", keyed by deviceId — upserts, never duplicates.
+  migrateLegacyContacts()
 
-  ipcMain.handle('contacts:add', (_event, contact) => {
-    const list = store.get('contacts', [])
-    const entry = { ...contact, id: randomUUID(), addedAt: new Date().toISOString() }
-    list.push(entry)
-    store.set('contacts', list)
-    return entry
+  ipcMain.handle('contacts:list', () => store.get('receivedContacts', []))
+
+  ipcMain.handle('contacts:save', (_event, contact) => {
+    const current = store.get('receivedContacts', [])
+    const { list, entry } = upsertContact(current, contact)
+    if (!entry) return { ok: false, contacts: current }
+    store.set('receivedContacts', list)
+    return { ok: true, contact: entry, contacts: list }
+  })
+
+  ipcMain.handle('contacts:delete', (_event, id) => {
+    const list = removeContact(store.get('receivedContacts', []), id)
+    store.set('receivedContacts', list)
+    return list
   })
 
   // Open a native picker; return the chosen path plus a preview data URL.

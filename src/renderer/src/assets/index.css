@@ -383,6 +383,191 @@ body {
   margin-bottom: 0.5rem;
 }
 
+/* ---- Top nav ---- */
+.nav {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.3rem;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+}
+
+.nav__tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.75rem;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--fg-muted);
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nav__tab--active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.nav__tab:not(.nav__tab--active):hover {
+  color: var(--fg);
+}
+
+.nav__badge {
+  min-width: 1.2rem;
+  padding: 0 0.35rem;
+  font-size: 0.7rem;
+  line-height: 1.2rem;
+  text-align: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: inherit;
+}
+
+.nav__tab:not(.nav__tab--active) .nav__badge {
+  background: var(--card-border);
+  color: var(--fg-muted);
+}
+
+/* ---- Contacts ---- */
+.contacts {
+  width: 100%;
+  max-width: 460px;
+}
+
+.contacts__header {
+  margin-bottom: 1rem;
+}
+
+.contacts__header .view__title {
+  text-align: left;
+  margin-bottom: 0.6rem;
+}
+
+.contacts__search {
+  width: 100%;
+}
+
+.contacts__empty {
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--card-border);
+  border-radius: 10px;
+}
+
+.contacts__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.contact-card {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+}
+
+.contact-card__avatar {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: #fff;
+  background: radial-gradient(circle at 30% 30%, var(--accent-hover), var(--accent));
+}
+
+.contact-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-card__name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-card__actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.contact-card__action {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+  background: var(--input-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.contact-card__action:hover {
+  color: var(--accent-hover);
+  border-color: var(--accent);
+}
+
+.contact-card__delete {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.contact-card__delete:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.contact-card__confirm {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
+.contact-card__confirm-yes {
+  color: var(--danger);
+}
+
 /* ---- Nearby peers (mDNS) ---- */
 .nearby {
   width: 100%;
