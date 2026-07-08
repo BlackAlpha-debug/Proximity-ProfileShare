@@ -9,6 +9,7 @@ import NearbyPeers from './components/NearbyPeers.jsx'
 import HandshakeOverlay from './components/HandshakeOverlay.jsx'
 import AppNav from './components/AppNav.jsx'
 import ContactsView from './components/ContactsView.jsx'
+import { playLaunch, playShareSuccess } from './lib/sounds.js'
 
 // Fold a handshake-event from the main process into the overlay state.
 function reduceHandshake(current, event) {
@@ -54,6 +55,11 @@ export default function App() {
   const [ownDeviceId, setOwnDeviceId] = useState('')
   const [toast, setToast] = useState(null)
   const [contacts, setContacts] = useState([])
+
+  // Play the launch chime once when the app boots.
+  useEffect(() => {
+    playLaunch()
+  }, [])
 
   // Our own deviceId, needed to derive the shared verification code.
   useEffect(() => {
@@ -103,6 +109,8 @@ export default function App() {
         setHandshake(null)
         return
       }
+      // A share landed (either side of the handshake) — play the success cue.
+      if (event.type === 'completed') playShareSuccess()
       setHandshake((current) => reduceHandshake(current, event))
     })
   }, [])
@@ -175,7 +183,10 @@ export default function App() {
   // Persist the scanned contact on Accept; navigation waits for the ceremony's
   // success hold (finishScanned) so the "Profiles shared" state is actually seen.
   function acceptScanned() {
-    if (scannedContact) persistContact(scannedContact)
+    if (scannedContact) {
+      persistContact(scannedContact)
+      playShareSuccess()
+    }
   }
   function finishScanned() {
     setScannedContact(null)
