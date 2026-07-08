@@ -89,6 +89,82 @@ body {
   color: var(--fg-muted);
 }
 
+/* ---- Launch splash (shown while the launch chime plays) ---- */
+.splash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: splash-in 0.6s ease both;
+}
+
+.splash__logo {
+  width: 76px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.1rem;
+  border-radius: 24px;
+  color: var(--accent);
+  background: var(--glass);
+  border: 1px solid var(--card-border);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  box-shadow: 0 8px 40px var(--accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  animation: splash-pulse 2s ease-in-out infinite;
+}
+
+.splash__title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.splash__tagline {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+@keyframes splash-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes splash-pulse {
+  0%,
+  100% {
+    box-shadow: 0 8px 40px var(--accent-glow),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+  50% {
+    box-shadow: 0 8px 55px rgba(10, 132, 255, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash {
+    animation: none;
+  }
+  .splash__logo {
+    animation: none;
+  }
+}
+
 /* ---- Card shell (Level 2 glass) ---- */
 .card {
   position: relative;

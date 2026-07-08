@@ -55,10 +55,15 @@ export default function App() {
   const [ownDeviceId, setOwnDeviceId] = useState('')
   const [toast, setToast] = useState(null)
   const [contacts, setContacts] = useState([])
+  const [splashReady, setSplashReady] = useState(false)
 
-  // Play the launch chime once when the app boots.
+  // Play the launch chime once when the app boots, then hold a short splash so
+  // the sound is heard first — the main UI is revealed after ~1.5s (or once the
+  // profile has loaded, whichever is later).
   useEffect(() => {
     playLaunch()
+    const t = setTimeout(() => setSplashReady(true), 1500)
+    return () => clearTimeout(t)
   }, [])
 
   // Our own deviceId, needed to derive the shared verification code.
@@ -213,10 +218,25 @@ export default function App() {
   const busyDeviceId = handshake?.kind === 'outgoing' ? handshake.peer.deviceId : null
 
   function renderView() {
-    if (view === 'loading') {
+    if (view === 'loading' || !splashReady) {
       return (
         <main className="app app--center">
-          <p className="muted">Loading…</p>
+          <div className="splash">
+            <div className="splash__logo" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="34" height="34">
+                <path
+                  d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+            <h1 className="splash__title">Proximity</h1>
+            <p className="splash__tagline">Profile Share</p>
+          </div>
         </main>
       )
     }

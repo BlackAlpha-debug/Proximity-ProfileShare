@@ -1,7 +1,7 @@
 {
   "name": "proximity-share",
   "productName": "Proximity Profile Share",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Swap a digital profile with someone nearby via an animated bubble handshake.",
   "main": "./out/main/index.js",
   "author": "",
