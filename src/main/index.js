@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, session } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import electronUpdater from 'electron-updater'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
 import { registerProfileIpc, ensureDeviceId } from './profileStore.js'
@@ -8,6 +8,10 @@ import { registerDiscoveryIpc } from './discovery.js'
 import { registerHandshakeIpc } from './handshake.js'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
+
+// electron-updater is CommonJS — with ESM we must take the default export and
+// destructure, not use a named import.
+const { autoUpdater } = electronUpdater
 
 function createWindow() {
   const mainWindow = new BrowserWindow({

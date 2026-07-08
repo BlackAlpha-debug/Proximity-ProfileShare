@@ -1,5 +1,6 @@
 import tls from 'tls'
 import { validateProfilePayload } from './profilePayload.js'
+import { isInitiator } from './tieBreak.js'
 
 // Electron-free handshake protocol engine so the choreography (including the
 // simultaneous-tap tie-break and the TLS profile exchange) can be unit-tested
@@ -185,7 +186,7 @@ export function createHandshakeEngine({
     // Simultaneous tap: we already sent this peer a request. Break the tie by
     // comparing deviceIds — the smaller id is the sole initiator.
     if (outgoing.has(peerId)) {
-      if (me < peerId) {
+      if (isInitiator(me, peerId)) {
         // We are the initiator. Ignore the peer's redundant request and keep
         // waiting for our outgoing to be accepted. We deliberately do NOT close
         // this socket — the peer tears it down when it cancels its own outgoing.

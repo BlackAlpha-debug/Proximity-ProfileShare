@@ -102,18 +102,27 @@ function stopDiscovery() {
   }
   browser = null
   published = null
-  if (bonjour) {
+  // Capture a local ref: unpublishAll's callback fires on a later tick, after we
+  // null the module-level `bonjour` below, so the callback must not read it.
+  const instance = bonjour
+  bonjour = null
+  if (instance) {
     try {
-      bonjour.unpublishAll(() => bonjour.destroy())
+      instance.unpublishAll(() => {
+        try {
+          instance.destroy()
+        } catch {
+          /* ignore */
+        }
+      })
     } catch {
       try {
-        bonjour.destroy()
+        instance.destroy()
       } catch {
         /* ignore */
       }
     }
   }
-  bonjour = null
   stopBle()
   // The handshake server intentionally outlives discovery start/stop; it is
   // closed on app quit by handshake.js.
